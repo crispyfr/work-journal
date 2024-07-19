@@ -1,0 +1,10 @@
+datetime
+numpy
+openai-whisper
+scipy
+sounddevice
+fpdf2
+nltk
+psutil
+unidecode
+sqlite3
