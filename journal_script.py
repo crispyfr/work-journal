@@ -1,3 +1,4 @@
+import configparser
 import datetime
 import os
 import tempfile
@@ -26,7 +27,28 @@ nltk.download('stopwords', quiet=True)
 LANGUAGES = ["English", "Albanian", "French", "German", "Italian", "Spanish"]
 MODELS = ["tiny", "base", "small", "medium", "large"]
 
+
 # Global settings
+config = configparser.ConfigParser()
+if not os.path.exists('work_journal_config.ini'):
+    config['DEFAULT'] = {
+        'language': 'English',
+        'model': 'small',
+        'duration': '60',
+        'auto_tag': 'True'
+    }
+    with open('work_journal_config.ini', 'w') as configfile:
+        config.write(configfile)
+config.read('work_journal_config.ini')
+
+def get_settings():
+    return {
+        "language": config['DEFAULT'].get('language', 'English'),
+        "model": config['DEFAULT'].get('model', 'small'),
+        "duration": int(config['DEFAULT'].get('duration', '60')),
+        "auto_tag": config['DEFAULT'].getboolean('auto_tag', True)
+    }
+
 settings = {
     "language": "English",
     "model": "small",
@@ -433,11 +455,11 @@ def display_resource_usage():
 
 def change_settings():
     global settings, transcription_tool
-    print("\nCurrent Settings:")
+    print("Current Settings:")
     for key, value in settings.items():
         print(f"{key.capitalize()}: {value}")
-    
-    print("\nChange Settings:")
+
+    print("Change Settings:")
     
     # Language
     print("Select language:")
@@ -445,33 +467,40 @@ def change_settings():
         print(f"{i}. {lang}")
     lang_choice = input(f"Enter your choice (1-{len(LANGUAGES)}, or press Enter to keep current): ")
     if lang_choice:
-        settings['language'] = LANGUAGES[int(lang_choice) - 1]
+        config['DEFAULT']['language'] = LANGUAGES[int(lang_choice) - 1]
 
     # Model
-    print("\nSelect model:")
+    print("Select model:")
     for i, model in enumerate(MODELS, 1):
         print(f"{i}. {model}")
     model_choice = input(f"Enter your choice (1-{len(MODELS)}, or press Enter to keep current): ")
     if model_choice:
         new_model = MODELS[int(model_choice) - 1]
         if new_model != settings['model']:
-            settings['model'] = new_model
+            config['DEFAULT']['model'] = new_model
             del transcription_tool
-            transcription_tool = TranscriptionTool(settings['model'])
+            transcription_tool = TranscriptionTool(new_model)
 
     # Duration
     duration = input("Enter recording duration in seconds (or press Enter to keep current): ")
     if duration:
-        settings['duration'] = int(duration)
+        config['DEFAULT']['duration'] = duration
 
     # Auto-tag
     auto_tag = input("Enable auto-tagging? (y/n, or press Enter to keep current): ").lower()
     if auto_tag in ['y', 'n']:
-        settings['auto_tag'] = (auto_tag == 'y')
+        config['DEFAULT']['auto_tag'] = str(auto_tag == 'y')
 
-    print("\nUpdated Settings:")
+    # Save the updated config
+    with open('work_journal_config.ini', 'w') as configfile:
+        config.write(configfile)
+
+    # Update the settings
+    settings.update(get_settings())
+
+    print("Updated Settings:")
     for key, value in settings.items():
         print(f"{key.capitalize()}: {value}")
-
+        
 if __name__ == "__main__":
     main_menu()
