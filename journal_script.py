@@ -18,6 +18,12 @@ from unidecode import unidecode
 import signal
 import gc
 import sqlite3
+from colorama import init, Fore, Style
+from tqdm import tqdm
+import time
+
+# Initialize colorama
+init()
 
 # Download necessary NLTK data
 nltk.download('punkt', quiet=True)
@@ -26,7 +32,6 @@ nltk.download('stopwords', quiet=True)
 # Constants
 LANGUAGES = ["English", "Albanian", "French", "German", "Italian", "Spanish"]
 MODELS = ["tiny", "base", "small", "medium", "large"]
-
 
 # Global settings
 config = configparser.ConfigParser()
@@ -49,12 +54,7 @@ def get_settings():
         "auto_tag": config['DEFAULT'].getboolean('auto_tag', True)
     }
 
-settings = {
-    "language": "English",
-    "model": "small",
-    "duration": 60,
-    "auto_tag": True
-}
+settings = get_settings()
 
 # Global variable to track if recording should stop
 stop_recording = False
@@ -148,28 +148,27 @@ class JournalDatabase:
     def close(self):
         self.conn.close()
 
-# Global instance of JournalDatabase
 db = JournalDatabase()
 
 def signal_handler(signum, frame):
     global stop_recording
     stop_recording = True
-    print("\nRecording stopped.")
+    print(f"\n{Fore.YELLOW}Recording stopped.{Style.RESET_ALL}")
 
 class TranscriptionTool:
     def __init__(self, model_name):
-        print(f"Loading {model_name} model... This may take a moment.")
+        print(f"{Fore.CYAN}Loading {model_name} model... This may take a moment.{Style.RESET_ALL}")
         self.model = whisper.load_model(model_name)
-        print("Model loaded and ready for use.")
+        print(f"{Fore.GREEN}Model loaded and ready for use.{Style.RESET_ALL}")
 
     def transcribe_audio(self, audio_file, language):
-        print("Transcribing...")
+        print(f"{Fore.CYAN}Transcribing...{Style.RESET_ALL}")
         return self.model.transcribe(audio_file, language=language, fp16=False)
 
     def __del__(self):
         del self.model
         gc.collect()
-        print("Model unloaded from memory.")
+        print(f"{Fore.YELLOW}Model unloaded from memory.{Style.RESET_ALL}")
 
 # Global instance of TranscriptionTool
 transcription_tool = None
@@ -178,14 +177,14 @@ def record_audio(duration, samplerate=16000):
     global stop_recording
     stop_recording = False
     
-    print(f"Recording for up to {duration} seconds... Press Ctrl+C to stop recording.")
+    print(f"{Fore.CYAN}Recording for up to {duration} seconds... Press Ctrl+C to stop recording.{Style.RESET_ALL}")
     
     signal.signal(signal.SIGINT, signal_handler)
     
     recorded_audio = []
     try:
         with sd.InputStream(samplerate=samplerate, channels=1) as stream:
-            for _ in range(int(samplerate * duration)):
+            for _ in tqdm(range(int(samplerate * duration)), desc="Recording"):
                 if stop_recording:
                     break
                 audio_chunk, overflowed = stream.read(1)
@@ -246,13 +245,32 @@ def summarize_day(date):
     pdf.output(summary_filename)
     return summary_filename
 
+def print_banner():
+    print(f"{Fore.CYAN}")
+    print(r"""
+    __        __         _      _                           _ 
+    \ \      / /__  _ __| | __ | | ___  _   _ _ __ _ __   _| |
+     \ \ /\ / / _ \| '__| |/ / | |/ _ \| | | | '__| '_ \ / _` |
+      \ V  V / (_) | |  |   <  | | (_) | |_| | |  | | | | (_| |
+       \_/\_/ \___/|_|  |_|\_\ |_|\___/ \__,_|_|  |_| |_|\__,_|
+    """)
+    print(f"{Style.RESET_ALL}")
+
+def confirm_action(prompt):
+    while True:
+        choice = input(f"{Fore.YELLOW}{prompt} (y/n): {Style.RESET_ALL}").lower()
+        if choice in ['y', 'n']:
+            return choice == 'y'
+        print(f"{Fore.RED}Please enter 'y' or 'n'.{Style.RESET_ALL}")
+
 def main_menu():
     global transcription_tool
     
     transcription_tool = TranscriptionTool(settings['model'])
 
     while True:
-        print("\nWork Journal")
+        print_banner()
+        print(f"{Fore.GREEN}\nWork Journal{Style.RESET_ALL}")
         print("1. Record New Audio Entry")
         print("2. Add New Text Entry")
         print("3. List Entries")
@@ -262,7 +280,7 @@ def main_menu():
         print("7. Change Settings")
         print("8. Exit")
         
-        choice = input("Enter your choice (1-8): ")
+        choice = input(f"{Fore.CYAN}Enter your choice (1-8): {Style.RESET_ALL}")
         
         if choice == '1':
             record_new_entry()
@@ -279,36 +297,37 @@ def main_menu():
         elif choice == '7':
             change_settings()
         elif choice == '8':
-            print("Exiting Work Journal. Goodbye!")
-            break
+            if confirm_action("Are you sure you want to exit?"):
+                print(f"{Fore.GREEN}Exiting Work Journal. Goodbye!{Style.RESET_ALL}")
+                break
         else:
-            print("Invalid choice. Please try again.")
+            print(f"{Fore.RED}Invalid choice. Please try again.{Style.RESET_ALL}")
 
     del transcription_tool
     gc.collect()
     db.close()
 
 def record_new_entry():
-    print("\nRecord New Audio Entry")
+    print(f"\n{Fore.GREEN}Record New Audio Entry{Style.RESET_ALL}")
     manual_tags = input("Additional tags (comma-separated): ")
 
     print(f"Recording for up to {settings['duration']} seconds... Press Ctrl+C to stop recording.")
     audio = record_audio(settings['duration'])
     
     if is_silent(audio):
-        print("The audio appears to be silent. You may want to check your microphone and try again.")
+        print(f"{Fore.YELLOW}The audio appears to be silent. You may want to check your microphone and try again.{Style.RESET_ALL}")
     else:
-        print("Transcribing...")
+        print(f"{Fore.CYAN}Transcribing...{Style.RESET_ALL}")
         with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as temp_audio:
             temp_filename = temp_audio.name
             wavfile.write(temp_filename, 16000, audio)
 
         try:
             result = transcription_tool.transcribe_audio(temp_filename, settings['language'])
-            print("Transcription complete!")
+            print(f"{Fore.GREEN}Transcription complete!{Style.RESET_ALL}")
             transcribed_text = result["text"]
-            print("Transcription:", transcribed_text)
-            print("Language:", result["language"])
+            print(f"Transcription: {transcribed_text}")
+            print(f"Language: {result['language']}")
             
             tags = []
             if settings['auto_tag']:
@@ -318,14 +337,14 @@ def record_new_entry():
             tags = list(set(tags))  # Remove duplicates
             
             db.save_entry(transcribed_text, tags)
-            print(f"Entry saved successfully with tags: {', '.join(tags)}")
+            print(f"{Fore.GREEN}Entry saved successfully with tags: {', '.join(tags)}{Style.RESET_ALL}")
         except Exception as e:
-            print(f"Error during transcription: {str(e)}")
+            print(f"{Fore.RED}Error during transcription: {str(e)}{Style.RESET_ALL}")
         finally:
             os.unlink(temp_filename)
 
 def add_text_entry():
-    print("\nAdd New Text Entry")
+    print(f"\n{Fore.GREEN}Add New Text Entry{Style.RESET_ALL}")
     text = input("Enter your text entry: ")
     manual_tags = input("Enter tags (comma-separated): ")
 
@@ -337,12 +356,13 @@ def add_text_entry():
     tags = list(set(tags))  # Remove duplicates
 
     db.save_entry(text, tags)
-    print(f"Entry saved successfully with tags: {', '.join(tags)}")
+    print(f"{Fore.GREEN}Entry saved successfully with tags: {', '.join(tags)}{Style.RESET_ALL}")
+
 
 def list_entries():
     entries = db.get_entries()
     if not entries:
-        print("No entries found.")
+        print(f"{Fore.YELLOW}No entries found.{Style.RESET_ALL}")
         return
 
     page_size = 5
@@ -350,20 +370,20 @@ def list_entries():
 
     while True:
         os.system('cls' if os.name == 'nt' else 'clear')
-        print("\n=== Work Journal Entries ===")
+        print(f"\n{Fore.GREEN}=== Work Journal Entries ==={Style.RESET_ALL}")
         
         start = current_page * page_size
         end = start + page_size
         current_entries = entries[start:end]
 
         for i, entry in enumerate(current_entries, start=start+1):
-            print(f"\n[{i}] Entry from {entry.get('timestamp', 'Unknown date')}")
+            print(f"\n{Fore.CYAN}[{i}] Entry from {entry.get('timestamp', 'Unknown date')}{Style.RESET_ALL}")
             print(f"Tags: {', '.join(entry.get('tags', []))}")
             print(f"Text: {entry.get('text', '')[:100]}{'...' if len(entry.get('text', '')) > 100 else ''}")
 
         print("\n" + "="*30)
         print(f"Page {current_page + 1} of {(len(entries) - 1) // page_size + 1}")
-        print("\nOptions:")
+        print(f"\n{Fore.YELLOW}Options:{Style.RESET_ALL}")
         print("  [n] Next page")
         print("  [p] Previous page")
         print("  [v] View full entry")
@@ -371,7 +391,7 @@ def list_entries():
         print("  [r] Remove an entry")
         print("  [q] Return to main menu")
 
-        choice = input("\nEnter your choice: ").lower()
+        choice = input(f"\n{Fore.CYAN}Enter your choice: {Style.RESET_ALL}").lower()
 
         if choice == 'n' and end < len(entries):
             current_page += 1
@@ -382,98 +402,100 @@ def list_entries():
             if 0 <= entry_num < len(entries):
                 os.system('cls' if os.name == 'nt' else 'clear')
                 entry = entries[entry_num]
-                print(f"\nFull Entry from {entry.get('timestamp', 'Unknown date')}")
+                print(f"\n{Fore.GREEN}Full Entry from {entry.get('timestamp', 'Unknown date')}{Style.RESET_ALL}")
                 print(f"Tags: {', '.join(entry.get('tags', []))}")
                 print(f"Text: {entry.get('text', '')}")
                 input("\nPress Enter to continue...")
             else:
-                print("Invalid entry number.")
+                print(f"{Fore.RED}Invalid entry number.{Style.RESET_ALL}")
         elif choice == 'e':
             entry_num = int(input("Enter the number of the entry to edit: ")) - 1
             if 0 <= entry_num < len(entries):
                 entry = entries[entry_num]
                 new_text = input("Enter new text (press Enter to keep current): ") or entry.get('text', '')
                 new_tags = input("Enter new tags (comma-separated, press Enter to keep current): ") or ', '.join(entry.get('tags', []))
-                db.update_entry(entry['id'], new_text, new_tags.split(', '))
-                print("Changes saved successfully.")
-                entries = db.get_entries()  # Refresh the entries list
+                if confirm_action("Are you sure you want to update this entry?"):
+                    db.update_entry(entry['id'], new_text, new_tags.split(', '))
+                    print(f"{Fore.GREEN}Changes saved successfully.{Style.RESET_ALL}")
+                    entries = db.get_entries()  # Refresh the entries list
             else:
-                print("Invalid entry number.")
+                print(f"{Fore.RED}Invalid entry number.{Style.RESET_ALL}")
         elif choice == 'r':
             entry_num = int(input("Enter the number of the entry to remove: ")) - 1
             if 0 <= entry_num < len(entries):
                 entry = entries[entry_num]
-                db.remove_entry(entry['id'])
-                print("Entry removed successfully.")
-                entries = db.get_entries()  # Refresh the entries list
+                if confirm_action("Are you sure you want to remove this entry?"):
+                    db.remove_entry(entry['id'])
+                    print(f"{Fore.GREEN}Entry removed successfully.{Style.RESET_ALL}")
+                    entries = db.get_entries()  # Refresh the entries list
             else:
-                print("Invalid entry number.")
+                print(f"{Fore.RED}Invalid entry number.{Style.RESET_ALL}")
         elif choice == 'q':
-            print("Returning to main menu.")
+            print(f"{Fore.YELLOW}Returning to main menu.{Style.RESET_ALL}")
             break
         else:
-            print("Invalid choice. Please try again.")
+            print(f"{Fore.RED}Invalid choice. Please try again.{Style.RESET_ALL}")
 
-        input("\nPress Enter to continue...")
+        input(f"\n{Fore.CYAN}Press Enter to continue...{Style.RESET_ALL}")
 
 def search_entries():
-    print("\nSearch Entries")
-    search_type = input("Search by (1. Text, 2. Tag): ")
-    search_term = input("Enter search term: ")
+    print(f"\n{Fore.GREEN}Search Entries{Style.RESET_ALL}")
+    search_type = input(f"{Fore.CYAN}Search by (1. Text, 2. Tag): {Style.RESET_ALL}")
+    search_term = input(f"{Fore.CYAN}Enter search term: {Style.RESET_ALL}")
     
     if search_type == "1":
         results = db.search_entries(search_term, search_type='text')
     else:
         results = db.search_entries(search_term, search_type='tag')
     
-    print(f"Found {len(results)} entries:")
+    print(f"{Fore.GREEN}Found {len(results)} entries:{Style.RESET_ALL}")
     for entry in results:
-        print(f"\nEntry from {entry.get('timestamp', 'Unknown date')}")
+        print(f"\n{Fore.CYAN}Entry from {entry.get('timestamp', 'Unknown date')}{Style.RESET_ALL}")
         print(f"Tags: {', '.join(entry.get('tags', []))}")
         print(f"Text: {entry.get('text', '')}")
 
 def summarize_day_menu():
-    print("\nSummarize Your Day")
-    date_str = input("Enter date to summarize (YYYY-MM-DD, default today): ") or datetime.date.today().isoformat()
+    print(f"\n{Fore.GREEN}Summarize Your Day{Style.RESET_ALL}")
+    date_str = input(f"{Fore.CYAN}Enter date to summarize (YYYY-MM-DD, default today): {Style.RESET_ALL}") or datetime.date.today().isoformat()
     try:
         date = datetime.date.fromisoformat(date_str)
         summary_file = summarize_day(date)
         if summary_file:
-            print(f"Summary generated for {date}")
-            print(f"Summary saved as: {summary_file}")
+            print(f"{Fore.GREEN}Summary generated for {date}{Style.RESET_ALL}")
+            print(f"{Fore.GREEN}Summary saved as: {summary_file}{Style.RESET_ALL}")
         else:
-            print(f"No entries found for {date}")
+            print(f"{Fore.YELLOW}No entries found for {date}{Style.RESET_ALL}")
     except ValueError:
-        print("Invalid date format. Please use YYYY-MM-DD.")
+        print(f"{Fore.RED}Invalid date format. Please use YYYY-MM-DD.{Style.RESET_ALL}")
 
 def display_resource_usage():
     cpu_percent, memory_percent, disk_percent = get_resource_usage()
-    print("\nResource Usage")
-    print(f"CPU Usage: {cpu_percent:.1f}%")
-    print(f"Memory Usage: {memory_percent:.1f}%")
-    print(f"Disk Usage: {disk_percent:.1f}%")
+    print(f"\n{Fore.GREEN}Resource Usage{Style.RESET_ALL}")
+    print(f"{Fore.CYAN}CPU Usage: {cpu_percent:.1f}%{Style.RESET_ALL}")
+    print(f"{Fore.CYAN}Memory Usage: {memory_percent:.1f}%{Style.RESET_ALL}")
+    print(f"{Fore.CYAN}Disk Usage: {disk_percent:.1f}%{Style.RESET_ALL}")
 
 def change_settings():
     global settings, transcription_tool
-    print("Current Settings:")
+    print(f"{Fore.GREEN}Current Settings:{Style.RESET_ALL}")
     for key, value in settings.items():
-        print(f"{key.capitalize()}: {value}")
+        print(f"{Fore.CYAN}{key.capitalize()}: {value}{Style.RESET_ALL}")
 
-    print("Change Settings:")
+    print(f"\n{Fore.GREEN}Change Settings:{Style.RESET_ALL}")
     
     # Language
-    print("Select language:")
+    print(f"{Fore.YELLOW}Select language:{Style.RESET_ALL}")
     for i, lang in enumerate(LANGUAGES, 1):
         print(f"{i}. {lang}")
-    lang_choice = input(f"Enter your choice (1-{len(LANGUAGES)}, or press Enter to keep current): ")
+    lang_choice = input(f"{Fore.CYAN}Enter your choice (1-{len(LANGUAGES)}, or press Enter to keep current): {Style.RESET_ALL}")
     if lang_choice:
         config['DEFAULT']['language'] = LANGUAGES[int(lang_choice) - 1]
 
     # Model
-    print("Select model:")
+    print(f"\n{Fore.YELLOW}Select model:{Style.RESET_ALL}")
     for i, model in enumerate(MODELS, 1):
         print(f"{i}. {model}")
-    model_choice = input(f"Enter your choice (1-{len(MODELS)}, or press Enter to keep current): ")
+    model_choice = input(f"{Fore.CYAN}Enter your choice (1-{len(MODELS)}, or press Enter to keep current): {Style.RESET_ALL}")
     if model_choice:
         new_model = MODELS[int(model_choice) - 1]
         if new_model != settings['model']:
@@ -482,12 +504,12 @@ def change_settings():
             transcription_tool = TranscriptionTool(new_model)
 
     # Duration
-    duration = input("Enter recording duration in seconds (or press Enter to keep current): ")
+    duration = input(f"{Fore.CYAN}Enter recording duration in seconds (or press Enter to keep current): {Style.RESET_ALL}")
     if duration:
         config['DEFAULT']['duration'] = duration
 
     # Auto-tag
-    auto_tag = input("Enable auto-tagging? (y/n, or press Enter to keep current): ").lower()
+    auto_tag = input(f"{Fore.CYAN}Enable auto-tagging? (y/n, or press Enter to keep current): {Style.RESET_ALL}").lower()
     if auto_tag in ['y', 'n']:
         config['DEFAULT']['auto_tag'] = str(auto_tag == 'y')
 
@@ -498,9 +520,9 @@ def change_settings():
     # Update the settings
     settings.update(get_settings())
 
-    print("Updated Settings:")
+    print(f"\n{Fore.GREEN}Updated Settings:{Style.RESET_ALL}")
     for key, value in settings.items():
-        print(f"{key.capitalize()}: {value}")
-        
+        print(f"{Fore.CYAN}{key.capitalize()}: {value}{Style.RESET_ALL}")
+
 if __name__ == "__main__":
     main_menu()

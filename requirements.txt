@@ -1,3 +1,4 @@
+configparser
 datetime
 numpy
 openai-whisper
@@ -7,4 +8,5 @@ fpdf2
 nltk
 psutil
 unidecode
-sqlite3
+colorama
+tqdm
