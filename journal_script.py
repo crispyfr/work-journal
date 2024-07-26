@@ -345,7 +345,20 @@ def record_new_entry():
 
 def add_text_entry():
     print(f"\n{Fore.GREEN}Add New Text Entry{Style.RESET_ALL}")
-    text = input("Enter your text entry: ")
+    print("Enter your text entry (press Enter twice on a new line to finish):")
+    lines = []
+    while True:
+        line = input()
+        if line == "":
+            if lines and lines[-1] == "":
+                break
+        lines.append(line)
+    text = "\n".join(lines).strip()
+    
+    if not text:
+        print(f"{Fore.YELLOW}No text entered. Entry not saved.{Style.RESET_ALL}")
+        return
+
     manual_tags = input("Enter tags (comma-separated): ")
 
     tags = []
